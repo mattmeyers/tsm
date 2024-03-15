@@ -8,8 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 )
+
+var IgnoreDirs = []string{".git", ".vscode", ".idea"}
 
 func main() {
 	if err := run(); err != nil {
@@ -40,7 +43,7 @@ func run() error {
 		}
 	}
 
-	err = switchSession(id)
+	err = switchToSession(id)
 	if err != nil {
 		return err
 	}
@@ -87,6 +90,12 @@ type IO struct {
 	Stderr io.Writer
 }
 
+var stdIO = IO{
+	Stdin:  os.Stdin,
+	Stdout: os.Stdout,
+	Stderr: os.Stderr,
+}
+
 func getTargetDir(baseDirs []string) (string, error) {
 	paths, err := listDirectories(baseDirs)
 	if err != nil {
@@ -123,7 +132,24 @@ func listDirectories(baseDirs []string) ([]string, error) {
 		}
 	}
 
-	return paths, nil
+	return removeIgnoredDirs(paths), nil
+}
+
+func removeIgnoredDirs(paths []string) []string {
+	return slices.DeleteFunc(paths, func(path string) bool {
+		for _, d := range IgnoreDirs {
+			if strings.HasSuffix(path, d) {
+				return true
+			}
+		}
+
+		return false
+	})
+}
+
+func tmuxRunning() bool {
+	err := runCommand(IO{}, "tmux", "ls")
+	return err == nil
 }
 
 func sessionExists(id string) bool {
@@ -135,8 +161,20 @@ func createSession(id, targetDir string) error {
 	return runCommand(IO{}, "tmux", "new-session", "-d", "-s", id, "-c", targetDir)
 }
 
+func switchToSession(id string) error {
+	if _, ok := os.LookupEnv("TMUX"); ok {
+		return switchSession(id)
+	}
+
+	return attachToSession(id)
+}
+
+func attachToSession(id string) error {
+	return runCommand(stdIO, "tmux", "attach", "-t", id)
+}
+
 func switchSession(id string) error {
-	return runCommand(IO{}, "tmux", "switch-client", "-t", id)
+	return runCommand(stdIO, "tmux", "switch-client", "-t", id)
 }
 
 func runCommand(inOut IO, command ...string) error {
@@ -150,5 +188,7 @@ func runCommand(inOut IO, command ...string) error {
 	cmd.Stdout = inOut.Stdout
 	cmd.Stderr = inOut.Stderr
 
-	return cmd.Run()
+	err := cmd.Run()
+
+	return err
 }
