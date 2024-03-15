@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,33 +23,23 @@ func main() {
 }
 
 func run() error {
+    flag.Parse()
+
 	config, err := readConfig()
 	if err != nil {
 		return err
 	}
 
-	targetDir, err := getTargetDir(config.BaseDirs)
-	if err != nil {
-		return err
-	} else if targetDir == "" {
-		return nil
-	}
+    if flag.NArg() == 0 {
+        return handleSessionSwitch(config)
+    }
 
-	id := path.Base(targetDir)
+    switch flag.Arg(0) {
+    case "0":
+        return handleSwitchToZero()
+    }
 
-	if !sessionExists(id) {
-		err = createSession(id, targetDir)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = switchToSession(id)
-	if err != nil {
-		return err
-	}
-
-	return nil
+    return nil
 }
 
 type Config struct {
@@ -82,6 +73,54 @@ func getConfigPath() (string, error) {
 	}
 
 	return path.Join(configPath, "tsm", "config.json"), nil
+}
+
+func handleSessionSwitch(config Config) error {
+	targetDir, err := getTargetDir(config.BaseDirs)
+	if err != nil {
+		return err
+	} else if targetDir == "" {
+		return nil
+	}
+
+	id := path.Base(targetDir)
+
+	if !sessionExists(id) {
+		err = createSession(id, targetDir)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = switchToSession(id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func handleSwitchToZero() error {
+    id := "0"
+    targetDir, err := os.UserHomeDir()
+    if err != nil {
+        return err
+    }
+
+	if !sessionExists(id) {
+		err = createSession(id, targetDir)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = switchToSession(id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 type IO struct {
