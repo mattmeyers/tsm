@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,8 +10,6 @@ import (
 	"path"
 	"strings"
 )
-
-const BaseDir = "/home/matt/Development/github.com/mattmeyers"
 
 func main() {
 	if err := run(); err != nil {
@@ -20,7 +19,12 @@ func main() {
 }
 
 func run() error {
-	targetDir, err := getTargetDir()
+	config, err := readConfig()
+	if err != nil {
+		return err
+	}
+
+	targetDir, err := getTargetDir(config.BaseDirs)
 	if err != nil {
 		return err
 	} else if targetDir == "" {
@@ -44,11 +48,37 @@ func run() error {
 	return nil
 }
 
-func checkErr(err error) {
+type Config struct {
+	BaseDirs []string `json:"base_dirs"`
+}
+
+func readConfig() (Config, error) {
+	configPath, err := getConfigPath()
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return Config{}, err
 	}
+
+	f, err := os.ReadFile(configPath)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var config Config
+	err = json.Unmarshal(f, &config)
+	if err != nil {
+		return Config{}, err
+	}
+
+	return config, nil
+}
+
+func getConfigPath() (string, error) {
+	configPath, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	return path.Join(configPath, "tsm", "config.json"), nil
 }
 
 type IO struct {
@@ -57,8 +87,8 @@ type IO struct {
 	Stderr io.Writer
 }
 
-func getTargetDir() (string, error) {
-	paths, err := listDirectories([]string{BaseDir})
+func getTargetDir(baseDirs []string) (string, error) {
+	paths, err := listDirectories(baseDirs)
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +119,7 @@ func listDirectories(baseDirs []string) ([]string, error) {
 				continue
 			}
 
-			paths = append(paths, path.Join(BaseDir, entry.Name()))
+			paths = append(paths, path.Join(baseDir, entry.Name()))
 		}
 	}
 
