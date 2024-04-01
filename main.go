@@ -14,6 +14,23 @@ import (
 	"strings"
 )
 
+const AppUsage = `tsm - The Tmux Session Manager
+
+tsm manages your tmux sessions by creating a new session per project directory.
+Sessions may contain multiple windows which are isolated and maintained when
+switching between projects. Omitting any commands will trigger the session
+switcher.
+
+USAGE:
+    tsm [OPTIONS] [COMMAND]
+
+COMMANDS:
+    0                     Switch to the zero session.
+
+OPTIONS:
+    -h, --help            Show this help message.
+`
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -22,6 +39,7 @@ func main() {
 }
 
 func run() error {
+    flag.Usage = func() { fmt.Print(AppUsage) }
 	flag.Parse()
 
 	configPath, err := getConfigPath()
