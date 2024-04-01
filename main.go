@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,8 +14,6 @@ import (
 	"strings"
 )
 
-var IgnoreDirs = []string{".git", ".vscode", ".idea"}
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -23,37 +22,46 @@ func main() {
 }
 
 func run() error {
-    flag.Parse()
+	flag.Parse()
 
-	config, err := readConfig()
+	configPath, err := getConfigPath()
 	if err != nil {
 		return err
 	}
 
-    if flag.NArg() == 0 {
-        return handleSessionSwitch(config)
-    }
+	config, err := readConfig(configPath)
+	if err != nil {
+		return err
+	}
 
-    switch flag.Arg(0) {
-    case "0":
-        return handleSwitchToZero()
-    }
-
-    return nil
+	switch flag.Arg(0) {
+	case "0":
+		return handleSwitchToZero()
+	default:
+		return handleSessionSwitch(config)
+	}
 }
 
 type Config struct {
-	BaseDirs []string `json:"base_dirs"`
+	BaseDirs   []string `json:"base_dirs"`
+	IgnoreDirs []string `json:"ignore_dirs"`
 }
 
-func readConfig() (Config, error) {
-	configPath, err := getConfigPath()
+func getConfigPath() (string, error) {
+	configPath, err := os.UserConfigDir()
 	if err != nil {
-		return Config{}, err
+		return "", err
 	}
 
+	return path.Join(configPath, "tsm", "config.json"), nil
+}
+
+func readConfig(configPath string) (Config, error) {
 	f, err := os.ReadFile(configPath)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
+		c := Config{BaseDirs: []string{}, IgnoreDirs: []string{}}
+		return c, writeConfig(configPath, c)
+	} else if err != nil {
 		return Config{}, err
 	}
 
@@ -66,17 +74,17 @@ func readConfig() (Config, error) {
 	return config, nil
 }
 
-func getConfigPath() (string, error) {
-	configPath, err := os.UserConfigDir()
+func writeConfig(configPath string, config Config) error {
+	d, err := json.Marshal(config)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return path.Join(configPath, "tsm", "config.json"), nil
+	return os.WriteFile(configPath, d, 0644)
 }
 
 func handleSessionSwitch(config Config) error {
-	targetDir, err := getTargetDir(config.BaseDirs)
+	targetDir, err := getTargetDir(config)
 	if err != nil {
 		return err
 	} else if targetDir == "" {
@@ -101,11 +109,11 @@ func handleSessionSwitch(config Config) error {
 }
 
 func handleSwitchToZero() error {
-    id := "0"
-    targetDir, err := os.UserHomeDir()
-    if err != nil {
-        return err
-    }
+	id := "0"
+	targetDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 
 	if !sessionExists(id) {
 		err = createSession(id, targetDir)
@@ -135,8 +143,8 @@ var stdIO = IO{
 	Stderr: os.Stderr,
 }
 
-func getTargetDir(baseDirs []string) (string, error) {
-	paths, err := listDirectories(baseDirs)
+func getTargetDir(config Config) (string, error) {
+	paths, err := listDirectories(config)
 	if err != nil {
 		return "", err
 	}
@@ -154,9 +162,9 @@ func getTargetDir(baseDirs []string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func listDirectories(baseDirs []string) ([]string, error) {
+func listDirectories(config Config) ([]string, error) {
 	var paths []string
-	for _, baseDir := range baseDirs {
+	for _, baseDir := range config.BaseDirs {
 		d, err := os.ReadDir(baseDir)
 		if err != nil {
 			return nil, err
@@ -171,12 +179,12 @@ func listDirectories(baseDirs []string) ([]string, error) {
 		}
 	}
 
-	return removeIgnoredDirs(paths), nil
+	return removeIgnoredDirs(paths, config), nil
 }
 
-func removeIgnoredDirs(paths []string) []string {
+func removeIgnoredDirs(paths []string, config Config) []string {
 	return slices.DeleteFunc(paths, func(path string) bool {
-		for _, d := range IgnoreDirs {
+		for _, d := range config.IgnoreDirs {
 			if strings.HasSuffix(path, d) {
 				return true
 			}
@@ -184,11 +192,6 @@ func removeIgnoredDirs(paths []string) []string {
 
 		return false
 	})
-}
-
-func tmuxRunning() bool {
-	err := runCommand(IO{}, "tmux", "ls")
-	return err == nil
 }
 
 func sessionExists(id string) bool {
