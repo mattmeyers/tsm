@@ -39,7 +39,7 @@ func main() {
 }
 
 func run() error {
-    flag.Usage = func() { fmt.Print(AppUsage) }
+	flag.Usage = func() { fmt.Print(AppUsage) }
 	flag.Parse()
 
 	configPath, err := getConfigPath()
@@ -109,7 +109,7 @@ func handleSessionSwitch(config Config) error {
 		return nil
 	}
 
-	id := path.Base(targetDir)
+	id := cleanID(path.Base(targetDir))
 
 	if !sessionExists(id) {
 		err = createSession(id, targetDir)
@@ -159,6 +159,24 @@ var stdIO = IO{
 	Stdin:  os.Stdin,
 	Stdout: os.Stdout,
 	Stderr: os.Stderr,
+}
+
+func characterAllowed(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '-' ||
+		r == '_'
+}
+func cleanID(id string) string {
+	idSlice := []rune(id)
+	for i, r := range idSlice {
+		if !characterAllowed(r) {
+			idSlice[i] = '_'
+		}
+	}
+
+	return string(idSlice)
 }
 
 func getTargetDir(config Config) (string, error) {
